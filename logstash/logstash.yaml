@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: elk
+  name: logstash-config
+data:
+  logstash.conf: |-
+    input {
+      beats {
+        port => 5044
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => "http://elasticsearch-0.elasticsearch-svc:9200"
+        index => "%{+YYYY.MM.dd}"
+      }
+    }
+  jvm.options: |-
+    -Xms2g
+    -Xmx4g
+    -XX:+UseG1GC
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: elk
+  name: logstash-svc
+  labels:
+    app: logstash
+spec:
+  ports:
+  - port: 5044
+    targetPort: logstash-port
+  selector:
+    app: logstash
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: elk
+  name: logstash
+  labels:
+    app: logstash
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash-oss:7.10.2
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 3Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        ports:
+        - containerPort: 5044
+          name: logstash-port
+        volumeMounts:
+        - name: logstash-pipeline
+          mountPath: /usr/share/logstash/pipeline/logstash.conf
+          subPath: logstash.conf
+          readOnly: true
+        - name: logstash-jvm-options
+          mountPath: /usr/share/logstash/config/jvm.options
+          subPath: jvm.options
+      volumes:
+      - name: logstash-pipeline
+        configMap: 
+          name: logstash-config
+          items:
+          - key: logstash.conf
+            path: logstash.conf
+      - name: logstash-jvm-options
+        configMap:
+          name: logstash-config
+          items:
+          - key: jvm.options
+            path: jvm.options
